@@ -17,11 +17,25 @@ func ExportOpenAPI(w io.Writer, title, version string, contracts ...Contract) er
 		return fmt.Errorf("writer, title and version are required")
 	}
 	paths := map[string]map[string]any{}
+	// OpenAPI forbids equivalent templated paths even with different names.
+	patterns := map[string]string{}
 	for _, c := range contracts {
 		if err := c.Validate(); err != nil {
 			return err
 		}
 		method := strings.ToLower(c.Method)
+		parts, _ := pathParts(c.Path)
+		patternParts := append([]string(nil), parts...)
+		for i, part := range patternParts {
+			if strings.HasPrefix(part, "{") {
+				patternParts[i] = "{}"
+			}
+		}
+		pattern := strings.Join(patternParts, "/")
+		if previous, ok := patterns[pattern]; ok && previous != c.Path {
+			return fmt.Errorf("equivalent templated paths %s and %s", previous, c.Path)
+		}
+		patterns[pattern] = c.Path
 		if paths[c.Path] == nil {
 			paths[c.Path] = map[string]any{}
 		}
@@ -54,7 +68,6 @@ func ExportOpenAPI(w io.Writer, title, version string, contracts ...Contract) er
 			op["requestBody"] = map[string]any{"required": true, "content": content(c.RequestBody)}
 		}
 		params := []any{}
-		parts, _ := pathParts(c.Path)
 		for _, p := range parts {
 			if strings.HasPrefix(p, "{") {
 				params = append(params, map[string]any{"in": "path", "name": p[1 : len(p)-1], "required": true, "schema": map[string]any{"type": "string", "minLength": 1}})
